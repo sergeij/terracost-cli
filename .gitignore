@@ -1,3 +1,4 @@
 /terracost-cli
 *.db
 terraform-plan.json
+dist

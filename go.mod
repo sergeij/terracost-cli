@@ -1,6 +1,6 @@
 module github.com/cycloidio/terracost-cli
 
-go 1.26.2
+go 1.25.0
 
 replace github.com/hashicorp/terraform => github.com/cycloidio/terraform v1.13.5-cy
 

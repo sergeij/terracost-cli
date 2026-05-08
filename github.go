@@ -48,24 +48,31 @@ func postPRComment(breakdown string, planned, increase decimal.Decimal) error {
 
 // resolveGitHubToken returns either GH_TOKEN if set, or mints a fresh installation
 // token from the GitHub App credentials in env (Atlantis-compatible naming:
-// GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID, GITHUB_APP_PEM_FILE).
+// GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID, GITHUB_APP_PEM_FILE — the latter
+// accepts either a path to a PEM file or the PEM contents inlined).
 func resolveGitHubToken() (string, error) {
 	if t := os.Getenv("GH_TOKEN"); t != "" {
 		return t, nil
 	}
 	appID := os.Getenv("GITHUB_APP_ID")
 	installID := os.Getenv("GITHUB_APP_INSTALLATION_ID")
-	keyPath := os.Getenv("GITHUB_APP_PEM_FILE")
-	if appID == "" || installID == "" || keyPath == "" {
+	keyPathOrPEM := os.Getenv("GITHUB_APP_PEM_FILE")
+	if appID == "" || installID == "" || keyPathOrPEM == "" {
 		return "", fmt.Errorf("set GH_TOKEN, or all of GITHUB_APP_ID/GITHUB_APP_INSTALLATION_ID/GITHUB_APP_PEM_FILE")
 	}
-	return mintInstallationToken(appID, installID, keyPath)
+	return mintInstallationToken(appID, installID, keyPathOrPEM)
 }
 
-func mintInstallationToken(appID, installID, keyPath string) (string, error) {
-	keyBytes, err := os.ReadFile(keyPath)
-	if err != nil {
-		return "", fmt.Errorf("reading App PEM file: %w", err)
+func mintInstallationToken(appID, installID, keyPathOrPEM string) (string, error) {
+	var keyBytes []byte
+	if strings.HasPrefix(strings.TrimSpace(keyPathOrPEM), "-----BEGIN") {
+		keyBytes = []byte(keyPathOrPEM)
+	} else {
+		var err error
+		keyBytes, err = os.ReadFile(keyPathOrPEM)
+		if err != nil {
+			return "", fmt.Errorf("reading App PEM file: %w", err)
+		}
 	}
 	key, err := jwt.ParseRSAPrivateKeyFromPEM(keyBytes)
 	if err != nil {

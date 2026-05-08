@@ -44,7 +44,7 @@ func main() {
 	flag.StringVar(&flagIngestRegion, "ingest-region", flagIngestRegion, "Region used to ingest")
 	flag.StringVar(&flagestimatePlan, "estimate-plan", flagestimatePlan, "terraform-plan.json file path to estimate (example: ./terraform-plan.json)")
 	flag.StringVar(&flagProvider, "provider", flagProvider, "Terraform provider used [aws]")
-	flag.BoolVar(&flagPRComment, "pr-comment", flagPRComment, "Post (or update) a cost summary comment on a GitHub PR (requires GH_TOKEN or GITHUB_APP_* env vars; needs BASE_REPO_OWNER, BASE_REPO_NAME, PULL_NUM)")
+	flag.BoolVar(&flagPRComment, "pr-comment", flagPRComment, "Post (or update) a cost summary comment on a GitHub PR (requires GH_TOKEN or GITHUB_APP_* env vars; GITHUB_APP_PEM_FILE accepts a path or the PEM inline; needs BASE_REPO_OWNER, BASE_REPO_NAME, PULL_NUM)")
 	flag.StringVar(&flagSqlitePath, "sqlite-path", flagSqlitePath, "Path to the SQLite database file")
 	flag.BoolVar(&flagLazy, "lazy", flagLazy, "With -ingest, skip if a successful prior ingest exists for the same region")
 	flag.DurationVar(&flagLazyMaxAge, "lazy-max-age", flagLazyMaxAge, "With -lazy, only skip if the prior ingest is within this age (e.g. 168h for 7 days; 0 = no age limit)")
@@ -66,6 +66,10 @@ func main() {
 		fmt.Printf("%s\n", err)
 		os.Exit(1)
 	}
+	// modernc.org/sqlite corrupts memory under concurrent writes against the
+	// same file; serialize all access through a single connection.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	be := NewBackend(db)
 
 	if flagIngest {
@@ -139,7 +143,10 @@ func ingest(flagProvider string, region string, be backend.Backend) {
 
 	for _, s := range aws.GetSupportedServices() {
 		fmt.Printf("[%s] Ingestion\n", s)
-		op := []aws.Option{}
+		// Default buffer is 100 MiB per service, which spikes RSS unnecessarily
+		// since we stream the CSV row-by-row. 1 MiB is plenty for bufio over the
+		// HTTP body.
+		op := []aws.Option{aws.WithBufferSize(1 << 20)}
 		if flagIngestMinimal {
 			op = append(op, aws.WithIngestionFilter(aws.MinimalFilter))
 		}
